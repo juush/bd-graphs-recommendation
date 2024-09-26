@@ -4,6 +4,7 @@ import com.amazon.ata.graphs.dynamodb.FollowEdge;
 import com.amazon.ata.graphs.dynamodb.FollowEdgeDao;
 import com.amazon.ata.graphs.dynamodb.Recommendation;
 import com.amazon.ata.graphs.dynamodb.RecommendationDao;
+import com.amazonaws.services.dynamodbv2.datamodeling.PaginatedQueryList;
 import com.amazonaws.services.lambda.runtime.Context;
 
 import java.security.InvalidParameterException;
@@ -24,6 +25,32 @@ public class CreateRecommendationsActivity {
     }
 
     public List<Recommendation> handleRequest(CreateRecommendationsRequest input, Context context) {
-        return null;
+        if (input == null || input.getUsername() == null || input.getUsername().isEmpty()) {
+            throw new InvalidParameterException("Username not provided");
+        }
+
+        List<Recommendation> recommendations = new ArrayList<>();
+        PaginatedQueryList<FollowEdge> followEdgePaginatedQueryList = this.followEdgeDao.getAllFollows(input.getUsername());
+        List<String> follows = followEdgePaginatedQueryList.stream()
+                .map(FollowEdge::getToUsername)
+                .collect(Collectors.toList());
+
+        for (String username : follows) {
+            PaginatedQueryList<FollowEdge> followsFollowEdges = this.followEdgeDao.getAllFollows(username);
+            List<String> followsFollows =  followsFollowEdges.stream()
+                    .map(FollowEdge::getToUsername)
+                    .collect(Collectors.toList());
+            for (String followsFollow : followsFollows) {
+                if (followsFollow != input.getUsername()
+                        && !follows.contains(followsFollows)
+                        && !recommendations.contains(followsFollow)) {
+                    recommendations.add(new Recommendation(input.getUsername(), followsFollow, "active"));
+                    if (recommendations.size() >= input.getLimit()) {
+                        return recommendations;
+                    }
+                }
+            }
+        }
+        return recommendations;
     }
 }
